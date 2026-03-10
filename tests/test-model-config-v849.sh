@@ -544,6 +544,107 @@ else
     fail "flow-deliver.md missing lint/typecheck quality step"
 fi
 
+# ─── Test Group 13: Relevance-Aware Synthesis (Crawl4AI-inspired) ──────────
+
+echo ""
+echo "Test Group 13: Relevance-Aware Synthesis"
+echo "-----------------------------------------"
+
+# Verify score_result_file function exists
+if grep -q '^score_result_file()' "$ORCHESTRATE"; then
+    pass "score_result_file() function defined"
+else
+    fail "score_result_file() function missing"
+fi
+
+# Verify scoring factors: word count, code blocks, specificity, structure
+if grep -A 40 'score_result_file()' "$ORCHESTRATE" | grep -q 'word_count'; then
+    pass "score_result_file() includes word count factor"
+else
+    fail "score_result_file() missing word count factor"
+fi
+
+if grep -A 40 'score_result_file()' "$ORCHESTRATE" | grep -q 'code_blocks'; then
+    pass "score_result_file() includes code block factor"
+else
+    fail "score_result_file() missing code block factor"
+fi
+
+if grep -A 60 'score_result_file()' "$ORCHESTRATE" | grep -q 'specifics'; then
+    pass "score_result_file() includes specificity factor"
+else
+    fail "score_result_file() missing specificity factor"
+fi
+
+if grep -A 70 'score_result_file()' "$ORCHESTRATE" | grep -q 'structure'; then
+    pass "score_result_file() includes structure factor"
+else
+    fail "score_result_file() missing structure factor"
+fi
+
+# Verify rank_results_by_signals function exists
+if grep -q '^rank_results_by_signals()' "$ORCHESTRATE"; then
+    pass "rank_results_by_signals() function defined"
+else
+    fail "rank_results_by_signals() function missing"
+fi
+
+# Verify rank sorts descending by score
+if grep -A 20 'rank_results_by_signals()' "$ORCHESTRATE" | grep -q 'sort.*-rn'; then
+    pass "rank_results_by_signals() sorts descending by score"
+else
+    fail "rank_results_by_signals() not sorting descending"
+fi
+
+# Verify aggregate_results accepts user_query parameter
+if grep -A 5 'aggregate_results()' "$ORCHESTRATE" | grep -q 'user_query'; then
+    pass "aggregate_results() accepts user_query for relevance-aware synthesis"
+else
+    fail "aggregate_results() missing user_query parameter"
+fi
+
+# Verify aggregate_results uses ranking
+if grep -A 30 'aggregate_results()' "$ORCHESTRATE" | grep -q 'rank_results_by_signals'; then
+    pass "aggregate_results() uses rank_results_by_signals"
+else
+    fail "aggregate_results() not using ranking"
+fi
+
+# Verify enhanced synthesis prompt has structured output
+if grep -A 100 'aggregate_results()' "$ORCHESTRATE" | grep -q 'Key Findings'; then
+    pass "aggregate_results() synthesis prompt includes structured output format"
+else
+    fail "aggregate_results() synthesis prompt missing structured output"
+fi
+
+# Verify minority opinion preservation in synthesis prompt
+if grep -A 60 'aggregate_results()' "$ORCHESTRATE" | grep -q 'minority'; then
+    pass "aggregate_results() synthesis prompt preserves minority opinions"
+else
+    fail "aggregate_results() synthesis prompt missing minority opinion rule"
+fi
+
+# Verify synthesize_probe_results uses ranking
+if grep -A 100 'synthesize_probe_results()' "$ORCHESTRATE" | grep -q 'rank_results_by_signals\|score_result_file'; then
+    pass "synthesize_probe_results() uses quality ranking"
+else
+    fail "synthesize_probe_results() not using quality ranking"
+fi
+
+# Verify synthesize_probe_results has enhanced structured output
+if grep -A 80 'synthesize_probe_results()' "$ORCHESTRATE" | grep -q 'Patterns & Consensus'; then
+    pass "synthesize_probe_results() has enhanced structured output format"
+else
+    fail "synthesize_probe_results() missing enhanced structured output"
+fi
+
+# Verify quality score annotation in concatenated results
+if grep -A 50 'aggregate_results()' "$ORCHESTRATE" | grep -q 'Quality:'; then
+    pass "aggregate_results() annotates results with quality scores"
+else
+    fail "aggregate_results() missing quality score annotations"
+fi
+
 echo ""
 
 # ─── Summary ──────────────────────────────────────────────────────────────
