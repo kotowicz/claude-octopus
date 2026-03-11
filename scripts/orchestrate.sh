@@ -8001,6 +8001,8 @@ review_run() {
     local timestamp
     timestamp=$(date +%s)
     local results_dir="${RESULTS_DIR:-$HOME/.claude-octopus/results}"
+    # Sync RESULTS_DIR global so spawn_agent writes to the same directory
+    RESULTS_DIR="$results_dir"
     local findings_file="$results_dir/review-findings-${timestamp}.json"
     mkdir -p "$results_dir"
 
@@ -8054,8 +8056,10 @@ Severity guide:
 
 ${review_context}
 
+Focus areas for this review: ${focus}
 Provenance: ${provenance}
 $(if [[ "$provenance" == "autonomous" || "$provenance" == "ai-assisted" ]]; then echo "ELEVATED RIGOR: Check for TDD evidence, placeholder logic, unwired components, speculative abstractions."; fi)
+$(if [[ "$autonomy" == "autonomous" ]]; then echo "AUTONOMOUS MODE: Apply maximum rigor. Flag every potential issue with full detail."; fi)
 
 Diff to review:
 \`\`\`
@@ -8065,11 +8069,14 @@ ${diff_content}
 Return ONLY valid JSON. No prose, no markdown fences."
 
     local round1_files=()
+    local round1_agent_types=()
     while IFS=: read -r agent_type role specialty; do
         [[ -z "$agent_type" ]] && continue
         local task_id="review-r1-${role}-${timestamp}"
-        local result_file="$results_dir/${task_id}.json"
+        # Use spawn_agent's actual output path convention: ${RESULTS_DIR}/${agent_type}-${task_id}.md
+        local result_file="${RESULTS_DIR}/${agent_type}-${task_id}.md"
         round1_files+=("$result_file")
+        round1_agent_types+=("$agent_type")
 
         local agent_prompt="You are the ${role} specialist. Focus on: ${specialty}.
 
@@ -8082,13 +8089,17 @@ ${agent_prompt_base}"
     wait
     log INFO "review_run: Round 1 complete"
 
-    # Collect Round 1 findings
+    # Collect Round 1 findings — strip possible markdown fences from agent output
     local all_findings="[]"
     for f in "${round1_files[@]}"; do
         [[ ! -f "$f" ]] && continue
         local agent_findings
-        agent_findings=$(jq -r '.findings // []' "$f" 2>/dev/null || echo "[]")
-        all_findings=$(echo "$all_findings $agent_findings" | jq -s 'add' 2>/dev/null || echo "$all_findings")
+        # Agent outputs ONLY JSON but strip any accidental markdown fences
+        agent_findings=$(sed 's/^```json[[:space:]]*//' "$f" 2>/dev/null | \
+            sed 's/^```[[:space:]]*//' | sed 's/```[[:space:]]*$//' | \
+            jq -r '.findings // []' 2>/dev/null || echo "[]")
+        all_findings=$(printf '%s\n%s' "$all_findings" "$agent_findings" | \
+            jq -s 'add' 2>/dev/null || echo "$all_findings")
     done
 
     # ── ROUND 2: Verification ─────────────────────────────────────────────────
@@ -8110,7 +8121,14 @@ $(echo "$all_findings" | jq -c '.')
 Return ONLY valid JSON with 'findings' array including verdict field."
 
     local verified_findings
-    verified_findings=$(run_agent_sync "codex" "$verifier_prompt" 180 "code-reviewer" "review")
+    verified_findings=$(run_agent_sync "codex" "$verifier_prompt" 180 "code-reviewer" "review") || {
+        log WARN "review_run: codex verifier failed, falling back to claude-sonnet"
+        verified_findings=$(run_agent_sync "claude-sonnet" "$verifier_prompt" 180 "code-reviewer" "review") || {
+            log WARN "review_run: verification failed entirely, using all findings as confirmed"
+            verified_findings="{\"findings\":$(echo "$all_findings" | \
+                jq 'map(. + {"verdict":"confirmed"})' 2>/dev/null || echo "[]")}"
+        }
+    }
 
     # Filter false positives
     local confirmed_findings
@@ -8131,7 +8149,10 @@ Return ONLY valid JSON with 'findings' array including verdict field."
 Findings: $(echo "$debate_candidates" | jq -c '.')
 Return JSON: {\"include\": [...finding titles...], \"exclude\": [...finding titles...]}"
             local debate_result
-            debate_result=$(run_agent_sync "codex" "$debate_prompt" 120 "code-reviewer" "review")
+            debate_result=$(run_agent_sync "codex" "$debate_prompt" 120 "code-reviewer" "review") || {
+                log WARN "review_run: debate agent failed, including all contested findings"
+                debate_result="{\"include\":[],\"exclude\":[]}"
+            }
             local exclude_titles
             exclude_titles=$(echo "$debate_result" | jq -r '.exclude // [] | .[]' 2>/dev/null || true)
             if [[ -n "$exclude_titles" ]]; then
@@ -8154,7 +8175,10 @@ Findings: $(echo "$confirmed_findings" | jq -c '.')
 Return ONLY JSON: {\"findings\": [...ranked, deduplicated findings...]}"
 
     local final_json
-    final_json=$(run_agent_sync "claude-sonnet" "$synthesis_prompt" 120 "code-reviewer" "review")
+    final_json=$(run_agent_sync "claude-sonnet" "$synthesis_prompt" 120 "code-reviewer" "review") || {
+        log WARN "review_run: synthesis failed, using confirmed findings sorted as-is"
+        final_json="{\"findings\":$(echo "$confirmed_findings" | jq -c 'sort_by(.severity)' 2>/dev/null || echo "[]")}"
+    }
 
     # Write findings file
     echo "$final_json" > "$findings_file"
@@ -8170,13 +8194,13 @@ Return ONLY JSON: {\"findings\": [...ranked, deduplicated findings...]}"
             "$findings_file" 2>/dev/null || echo "0")
         if [[ "$publish" == "auto" ]] && awk "BEGIN{exit !($avg_confidence >= 0.85)}"; then
             log INFO "review_run: auto-publishing to PR #$pr_number (confidence=$avg_confidence)"
-            post_inline_comments "$pr_number" "$findings_file"
+            post_inline_comments "$pr_number" "$findings_file" || render_terminal_report "$findings_file"
         elif [[ "$publish" == "ask" ]]; then
             render_terminal_report "$findings_file"
             echo ""
             echo "PR #$pr_number is open. Post findings as inline comments? (y/N)"
             read -r response
-            [[ "$response" =~ ^[Yy] ]] && post_inline_comments "$pr_number" "$findings_file"
+            [[ "$response" =~ ^[Yy] ]] && { post_inline_comments "$pr_number" "$findings_file" || render_terminal_report "$findings_file"; }
         fi
     else
         render_terminal_report "$findings_file"
@@ -8199,6 +8223,14 @@ post_inline_comments() {
 
     local commit_id=""
     commit_id=$(gh pr view "$pr_number" --json headRefOid -q .headRefOid 2>/dev/null || true)
+
+    if [[ -z "$commit_id" ]]; then
+        log WARN "post_inline_comments: could not determine commit SHA for PR #$pr_number — posting summary comment only"
+        local summary
+        summary=$(render_review_summary "$findings_file")
+        gh pr review "$pr_number" --comment --body "$summary" 2>/dev/null || true
+        return 0
+    fi
 
     local summary
     summary=$(render_review_summary "$findings_file")

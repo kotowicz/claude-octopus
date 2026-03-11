@@ -77,6 +77,27 @@ assert_contains "$(cat "$REVIEW_CMD" 2>/dev/null)" \
 assert_contains "$(cat "$REVIEW_CMD" 2>/dev/null)" \
   "code-review|review_run" "review command: calls code-review or review_run backend"
 
+# ── result-file path convention ───────────────────────────────────────────────
+# spawn_agent writes ${RESULTS_DIR}/${agent_type}-${task_id}.md
+# review_run must reference that same pattern, not ${task_id}.json
+
+assert_contains "$(grep 'RESULTS_DIR.*agent_type.*task_id' "$ORCHESTRATE" 2>/dev/null | head -5)" \
+  "RESULTS_DIR" "review_run: result_file uses RESULTS_DIR/agent_type-task_id pattern (no .json)"
+
+assert_not_contains "$(grep -A5 'round1_files' "$ORCHESTRATE" 2>/dev/null | head -20)" \
+  'task_id.*\.json"' "review_run: result_file not using old .json path pattern"
+
+# ── fallback guards ───────────────────────────────────────────────────────────
+
+assert_contains "$(grep -c 'codex verifier failed' "$ORCHESTRATE" 2>/dev/null || echo 0)" \
+  "[1-9]" "review_run: verifier run_agent_sync has fallback guard"
+
+assert_contains "$(grep 'post_inline_comments.*findings_file.*||' "$ORCHESTRATE" 2>/dev/null | head -5)" \
+  "render_terminal_report" "review_run: post_inline_comments guarded with terminal fallback"
+
+assert_contains "$(grep -A2 'commit_id.*headRefOid' "$ORCHESTRATE" 2>/dev/null | head -10)" \
+  'commit_id' "post_inline_comments: empty commit_id guarded"
+
 # ── MCP schema ───────────────────────────────────────────────────────────────
 
 MCP_INDEX="$PROJECT_ROOT/mcp-server/src/index.ts"

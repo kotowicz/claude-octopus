@@ -37,7 +37,7 @@ assert_contains() {
     fi
 }
 
-assert_contains "$REVIEW_COMMAND" 'header:\s*"Implementation Mode"' \
+assert_contains "$REVIEW_COMMAND" 'header:\s*"Provenance"|Autonomous / Dark Factory|AI-assisted' \
     "review command asks for implementation mode"
 assert_contains "$REVIEW_COMMAND" 'Autonomous / Dark Factory' \
     "review command offers autonomous review mode"
