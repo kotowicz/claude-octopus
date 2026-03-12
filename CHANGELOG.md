@@ -2,7 +2,26 @@
 
 ### Changed
 
-- Multi-agentic /octo:research — parallel Agent dispatch replaces single Bash subprocess, user-configurable intensity, Claude in-conversation synthesis
+- **Multi-agentic `/octo:research`** — Refactored from single `Bash(orchestrate.sh probe)` call (120s timeout) to parallel `Agent(run_in_background=true)` subagents. Each perspective calls `orchestrate.sh probe-single` independently — no timeout constraint. Claude synthesizes in-conversation instead of Gemini synthesis that frequently timed out.
+- **User-configurable research intensity** — `/octo:research` and `/octo:discover` now ask intensity before launching: Quick (2 agents, 1-2 min), Standard (4-5 agents, 2-4 min), Deep (6-7 agents with web search, 3-6 min). Intensity passed via `[intensity=quick|standard|deep]` in Skill args.
+- **Gemini-first launch ordering** — Higher-latency Gemini agents launch first, then Codex, then Claude Sonnet, then Perplexity, reducing total wall-clock time.
+
+### Added
+
+- `probe_single_agent()` — Standalone single-perspective probe function in orchestrate.sh. Handles persona application, context budget, credential isolation, auth retry, and result file writing.
+- `probe-single` dispatch command — Calls `probe_single_agent()` from Agent tool subagents.
+- `test-probe-single.sh` — 26 static analysis tests for probe-single function, dispatch, flow-discover integration, command alignment, and backward compatibility.
+
+### Fixed
+
+- `test-knowledge-routing.sh` — Fixed pre-existing SIGPIPE flake caused by `grep -q` with `set -eo pipefail` (replaced with `grep -c >/dev/null` per known gotcha).
+
+### Internal
+
+- `flow-discover.md` STEP 3.5-7 rewritten: fleet building by intensity, parallel Agent dispatch, result collection with graceful degradation (min 2 results), structured in-conversation synthesis.
+- `discover.md` 4-option depth → 3-option intensity question, aligned with `research.md`.
+- `test-enforcement-pattern.sh` scoped exceptions: flow-discover may use Agent tool (not Bash) and direct synthesis file pattern (not `find -mmin`).
+- Backward compatible: `probe_discover()`, `discover|research|probe` dispatch, and `/octo:embrace` path all untouched.
 
 ---
 

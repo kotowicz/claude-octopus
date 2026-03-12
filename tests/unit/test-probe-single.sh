@@ -87,23 +87,30 @@ assert_contains "$(grep -c 'run_in_background.*true' "$FLOW_DISCOVER" 2>/dev/nul
 
 # ── flow-discover.md preserves test markers ──────────────────────────────────
 
-assert_contains "$(cat "$FLOW_DISCOVER")" \
-  "execution_mode: enforced" "flow-discover.md: preserves execution_mode: enforced"
+# Use grep -c on file directly to avoid both arg size limits and SIGPIPE (grep -q + pipefail)
+[[ $(grep -c "execution_mode: enforced" "$FLOW_DISCOVER") -gt 0 ]] && \
+  pass "flow-discover.md: preserves execution_mode: enforced" || \
+  fail "flow-discover.md: preserves execution_mode: enforced" "missing: execution_mode: enforced"
 
-assert_contains "$(cat "$FLOW_DISCOVER")" \
-  "orchestrate_sh_executed" "flow-discover.md: preserves orchestrate_sh_executed validation gate"
+[[ $(grep -c "orchestrate_sh_executed" "$FLOW_DISCOVER") -gt 0 ]] && \
+  pass "flow-discover.md: preserves orchestrate_sh_executed validation gate" || \
+  fail "flow-discover.md: preserves orchestrate_sh_executed validation gate" "missing: orchestrate_sh_executed"
 
-assert_contains "$(cat "$FLOW_DISCOVER")" \
-  "synthesis_file_exists" "flow-discover.md: preserves synthesis_file_exists validation gate"
+[[ $(grep -c "synthesis_file_exists" "$FLOW_DISCOVER") -gt 0 ]] && \
+  pass "flow-discover.md: preserves synthesis_file_exists validation gate" || \
+  fail "flow-discover.md: preserves synthesis_file_exists validation gate" "missing: synthesis_file_exists"
 
-assert_contains "$(cat "$FLOW_DISCOVER")" \
-  "probe-synthesis" "flow-discover.md: preserves probe-synthesis reference"
+[[ $(grep -c "probe-synthesis" "$FLOW_DISCOVER") -gt 0 ]] && \
+  pass "flow-discover.md: preserves probe-synthesis reference" || \
+  fail "flow-discover.md: preserves probe-synthesis reference" "missing: probe-synthesis"
 
-assert_contains "$(cat "$FLOW_DISCOVER")" \
-  "Perplexity" "flow-discover.md: preserves Perplexity indicator"
+[[ $(grep -c "Perplexity" "$FLOW_DISCOVER") -gt 0 ]] && \
+  pass "flow-discover.md: preserves Perplexity indicator" || \
+  fail "flow-discover.md: preserves Perplexity indicator" "missing: Perplexity"
 
-assert_contains "$(cat "$FLOW_DISCOVER")" \
-  "EXECUTION CONTRACT" "flow-discover.md: preserves EXECUTION CONTRACT header"
+[[ $(grep -c "EXECUTION CONTRACT" "$FLOW_DISCOVER") -gt 0 ]] && \
+  pass "flow-discover.md: preserves EXECUTION CONTRACT header" || \
+  fail "flow-discover.md: preserves EXECUTION CONTRACT header" "missing: EXECUTION CONTRACT"
 
 # ── research.md has intensity AskUserQuestion ────────────────────────────────
 
