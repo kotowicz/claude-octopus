@@ -1,6 +1,6 @@
 # Blind Debate Workflow Reference
 
-Use this file for exact CLI patterns, compatibility checks, prompt templates, output layout, state tracking, artifact validation, convergence scoring, and the quality checklist.
+Use this file for exact CLI patterns, compatibility checks, prompt templates, output layout, state tracking, artifact validation, convergence scoring, display templates, and the quality checklist.
 
 ## Output Layout
 
@@ -43,12 +43,68 @@ Required artifacts:
 Display this before any setup or execution work:
 
 ```text
-CLAUDE OCTOPUS ACTIVATED - Blind Debate
-Topic: [question]
-Mode: Blind papers -> Explicit peer review -> Reflexive revision -> Convergence gate -> Merged answer
-Participants: Claude, Codex, [Gemini]
+🐙 **CLAUDE OCTOPUS ACTIVATED** - Blind Debate
+🐙 Topic: [question]
+
+Phase: Blind papers → Explicit peer review → Reflexive revision → Convergence gate → Merged answer
+
+Participants (working INDEPENDENTLY in blind phase):
+🔴 Codex CLI - Independent analysis (blind)
+🟡 Gemini CLI - Independent analysis (blind) [if active]
+🔵 Claude CLI - Independent analysis (blind)
+🐙 Claude - Moderator and synthesis
+
 Max rounds: [n]
 Convergence threshold: [threshold]
+```
+
+**This banner is NOT optional.** The user must see which providers are active and what workflow phases will execute.
+
+## In-Chat Progress Display
+
+Display these templates to the user at each phase transition. This is mandatory — the user must have real-time visibility into the debate's progress.
+
+### After Blind Phase
+
+```text
+=== BLIND PHASE COMPLETE ===
+
+🔴 **Codex (Blind):** [2-3 sentence summary of Codex's core position]
+🟡 **Gemini (Blind):** [2-3 sentence summary of Gemini's core position, if active]
+🔵 **Claude (Blind):** [2-3 sentence summary of Claude's core position]
+
+Initial diversity: [high / moderate / low] — [brief note on how approaches differ]
+```
+
+### After Review Stage (each round)
+
+```text
+=== ROUND [N]: PEER REVIEWS COMPLETE ===
+
+🔴 Codex reviewed: [authors reviewed] — key critique: [1-line takeaway]
+🟡 Gemini reviewed: [authors reviewed] — key critique: [1-line takeaway, if active]
+🔵 Claude reviewed: [authors reviewed] — key critique: [1-line takeaway]
+
+Strongest challenge raised: [the most impactful critique across all reviews]
+```
+
+### After Revision Stage (each round)
+
+```text
+=== ROUND [N]: REVISIONS COMPLETE ===
+
+🔴 **Codex:** [key position change or reaffirmation]
+🟡 **Gemini:** [key position change or reaffirmation, if active]
+🔵 **Claude:** [key position change or reaffirmation]
+```
+
+### Convergence Status (after each round)
+
+Display immediately after the revision summary:
+
+```text
+Convergence: [score] / [threshold] — [CONVERGING ▲ | DIVERGING ▼ | STABLE ■]
+Decision: [CONTINUE to round N+1 | STOP — consensus reached | CONTINUE-FORCED — rounds remaining]
 ```
 
 ## Compatibility Checks
@@ -323,3 +379,147 @@ case "$REVIEWER" in
   gemini)
     printf '%s' "$REVIEW_PROMPT" | gemini -p "" -o text --approval-mode yolo > "$REVIEW_FILE"
     ;;
+esac
+```
+
+Use the same dispatch pattern for revision prompts.
+
+## Round Structure
+
+For each round:
+
+1. Use the latest paper from every active participant.
+2. Generate every ordered review pair where reviewer != author.
+3. Wait until all review files for the round exist, are non-empty, and pass artifact validation.
+4. Display the review stage summary to the user.
+5. Generate one revision for each participant using reviews received plus reviews authored.
+6. Wait until all revision files for the round exist, are non-empty, and pass artifact validation.
+7. Display the revision stage summary to the user.
+8. Write `rounds/rNNN_convergence.md` and update `state.json`.
+9. Display the convergence status to the user.
+
+With 3 participants, each round must produce 6 reviews and 3 revisions.
+With 2 participants, each round must produce 2 reviews and 2 revisions.
+
+## Artifact Validation
+
+Use these checks before accepting a generated artifact:
+
+- blind papers must contain substantive prose and not just runner status or wrapper text
+- round-1 review files must include `STRENGTHS`, `CONCERNS`, `MISSING NUANCE`, `RECOMMENDED REVISIONS`, and `SELF-REFLECTION`
+- later-round review files must include `REMAINING GAPS`, `STRONGEST ELEMENT`, `DISAGREEMENTS`, `MERGE OPPORTUNITIES`, and `SELF-REFLECTION`
+- revision files must include `Change Log`, `What Peer Review Changed For Me`, `Revised Paper`, and `Remaining Open Questions`
+
+If a file has wrapper text around an otherwise valid document, prefer rerunning once with stricter prompt hygiene.
+
+If rerun still produces deterministic wrapper lines, trim only the obvious non-content prefix or suffix before saving the final artifact. Do not rewrite the model's substantive content.
+
+## Convergence Gate
+
+Treat `--rounds` as the maximum number of peer-review rounds.
+
+After each revision stage:
+
+1. Extract the primary recommendation from each latest revised paper.
+2. Group substantially aligned recommendations into clusters.
+3. Compute:
+
+```text
+convergence_score = cluster_size / participant_count
+```
+
+Save the assessment to `rounds/rNNN_convergence.md` using this format:
+
+```markdown
+# Convergence Assessment - Round [N]
+
+## Primary Recommendations
+- Claude: [extracted recommendation]
+- Codex: [extracted recommendation]
+- Gemini: [extracted recommendation, if participating]
+
+## Alignment Analysis
+[Which recommendations align and why]
+
+## Convergence Score
+Score: [X.XX] (threshold: [threshold])
+
+## Blocking Objections
+[Any new blocking contradictions, or "None"]
+
+## Decision
+[CONTINUE | STOP | CONTINUE-FORCED] -- [reasoning]
+```
+
+Early stop is allowed only when:
+- `convergence_score >= threshold`
+- no new blocking contradiction appears in the current round's reviews
+- remaining disagreement is about nuance, caveats, sequencing, or implementation detail rather than incompatible core recommendations
+- the latest revisions are refinements rather than new substantive positions
+
+If `--no-convergence-check` is set, still write the assessment file and append it to `state.json`, but continue until the round cap unless a hard failure occurs.
+
+If the round cap is reached without convergence, still write `merged-answer.md` and document unresolved tensions in `synthesis.md`.
+
+## Merged Answer Outline
+
+Write `merged-answer.md` as one integrated final answer:
+
+```markdown
+# Merged Answer: [QUESTION]
+
+## Final Recommendation
+[single coherent recommendation]
+
+## Why This Is The Best Combined Answer
+[why the merged result is stronger than any one paper]
+
+## Critical Nuances Included
+[high-priority and lower-priority concerns that were preserved]
+
+## Triggers That Would Change The Recommendation
+[evidence or conditions that would change the answer]
+```
+
+## Synthesis Outline
+
+Write `synthesis.md` with these sections:
+
+```markdown
+# Blind Debate Synthesis: [QUESTION]
+
+## Debate Structure
+## Initial Blind Positions
+## Most Important Reviews
+## Reflexive Changes
+## Revision History By Round
+## Convergence Score By Round
+## Remaining Trade-offs
+## Decision Framework
+## Dissenting Views Worth Preserving
+## Final Result
+See `merged-answer.md` for the complete integrated answer.
+```
+
+## Quality Checklist
+
+- [ ] Banner with participant color codes displayed before any work
+- [ ] Claude and Codex compatibility checks passed or the workflow stopped
+- [ ] Every active participant received the identical blind prompt
+- [ ] Claude wrote its blind paper in a separate `claude --print` session before any external blind output was read
+- [ ] No blind output was read or shared during the blind phase
+- [ ] Blind phase summary displayed to user with per-participant position summaries
+- [ ] Every participant reviewed every other participant in every round
+- [ ] Review files were written before revision files
+- [ ] Review prompts included `SELF-REFLECTION`
+- [ ] Review stage summary displayed to user after each round
+- [ ] Revision prompts included both reviews received and reviews authored
+- [ ] Revision stage summary displayed to user after each round
+- [ ] Convergence status with score and direction displayed to user after each round
+- [ ] Output artifacts passed section and wrapper validation
+- [ ] The convergence gate, not a fixed script, decided whether to stop early
+- [ ] `rounds/rNNN_convergence.md` was written for every completed round
+- [ ] `state.json` was updated with dropped participants, convergence history, and current status
+- [ ] `merged-answer.md` was written as a single integrated answer
+- [ ] `synthesis.md` preserved remaining trade-offs and convergence history
+- [ ] Output was stored under `~/.claude-octopus/`

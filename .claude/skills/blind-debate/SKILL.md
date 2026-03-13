@@ -10,7 +10,7 @@ description: "Academic blind peer review across Claude and Codex, with optional 
 context: fork
 metadata:
   author: Octo
-  version: 2.3.0
+  version: 2.4.0
   category: workflow-automation
   tags: [debate, peer-review, multi-model, convergence, synthesis]
 ---
@@ -41,6 +41,7 @@ The revision step must use both channels. That reflexive mechanism is the core o
 - `--rounds` is a maximum, not a fixed script. Stop early only when the convergence gate passes.
 - `merged-answer.md` is the primary artifact and must be one merged answer, not a comparison table.
 - Preserve genuine trade-offs in `synthesis.md` instead of flattening them away.
+- Display real-time progress to the user after every phase transition using the display templates from `references/workflow.md`.
 
 ## Use This Skill When
 
@@ -68,7 +69,7 @@ Run the provider and compatibility checks from `references/workflow.md` before a
 
 Gemini is optional. Include it only when the CLI exists, supports `-p "" -o text --approval-mode yolo`, and the user did not pass `--no-gemini`.
 
-Display the status banner from `references/workflow.md` before creating files.
+Display the status banner from `references/workflow.md` before creating files. This banner is mandatory and must use the visual indicator format with participant color codes.
 
 ### Step 2: Create the debate directory and save state
 
@@ -93,6 +94,8 @@ If Gemini fails or does not support the required headless flags, remove it from 
 
 If Claude or Codex fails, rerun once with the same prompt and stop if the retry still fails.
 
+After all blind papers are validated, display the blind phase summary to the user using the display template from `references/workflow.md`. The user must see each participant's core position and the initial diversity before the workflow continues.
+
 ### Step 4: Run peer-review and revision rounds
 
 For each round from `1` to `MAX_ROUNDS`:
@@ -114,6 +117,8 @@ Use the round-1 review prompt for the first round and the later-round review pro
 
 Write all review files before any revision file.
 
+After all review files for the round are validated, display the review stage summary to the user using the display template from `references/workflow.md`.
+
 #### 4.2 Revision stage
 
 After all reviews exist, each participant revises their own latest paper.
@@ -127,6 +132,8 @@ This is mandatory. The revision must reflect both criticism received and insight
 
 Revision output must follow the structured format from `references/workflow.md`.
 
+After all revision files for the round are validated, display the revision stage summary to the user using the display template from `references/workflow.md`.
+
 #### 4.3 Convergence gate
 
 After each revision stage, compare the latest revised papers.
@@ -137,6 +144,8 @@ Compute:
 - `convergence_score = cluster_size / participant_count`
 
 Save the decision to `rounds/rNNN_convergence.md` and append the same decision summary to `state.json`.
+
+Display the convergence status to the user using the display template from `references/workflow.md`.
 
 Stop early only when:
 - `convergence_score >= --convergence-threshold` (default `0.75`)
@@ -172,3 +181,7 @@ If `--synthesize` was requested, derive `deliverable.md` from `merged-answer.md`
 - `/octo:debate` for standard immediate back-and-forth
 - `/octo:docs` for document export after synthesis
 - `/octo:embrace` for front-loading a blind debate into a broader workflow
+
+## References
+
+Read `references/workflow.md` for exact CLI patterns, compatibility probes, prompt templates, state tracking, file naming, artifact validation, convergence rules, display templates, and quality checks.
